@@ -118,6 +118,7 @@ func (tm TransactionMisc) From() *atomic.Value {
 
 func DecodeTransaction(s *rlp.Stream) (Transaction, error) {
 	kind, size, err := s.Kind()
+
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +149,12 @@ func DecodeTransaction(s *rlp.Stream) (Transaction, error) {
 		tx = t
 	case DynamicFeeTxType:
 		t := &DynamicFeeTransaction{}
+		if err = t.DecodeRLP(s); err != nil {
+			return nil, err
+		}
+		tx = t
+	case DepositTxType:
+		t := &DepositTx{}
 		if err = t.DecodeRLP(s); err != nil {
 			return nil, err
 		}

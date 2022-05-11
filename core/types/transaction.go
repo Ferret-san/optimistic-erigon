@@ -45,7 +45,7 @@ const (
 	AccessListTxType
 	DynamicFeeTxType
 	StarknetType
-	DepositTxType
+	DepositTxType = 0x7e
 )
 
 // Transaction is an Ethereum transaction.
@@ -153,14 +153,14 @@ func DecodeTransaction(s *rlp.Stream) (Transaction, error) {
 			return nil, err
 		}
 		tx = t
-	case DepositTxType:
-		t := &DepositTx{}
+	case StarknetType:
+		t := &StarknetTransaction{}
 		if err = t.DecodeRLP(s); err != nil {
 			return nil, err
 		}
 		tx = t
-	case StarknetType:
-		t := &StarknetTransaction{}
+	case DepositTxType:
+		t := &DepositTx{}
 		if err = t.DecodeRLP(s); err != nil {
 			return nil, err
 		}

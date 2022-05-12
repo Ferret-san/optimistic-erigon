@@ -28,6 +28,11 @@ type txJSON struct {
 	S        *hexutil.Big    `json:"s"`
 	To       *common.Address `json:"to"`
 
+	// Deposit transaction fields
+	SourceHash *common.Hash    `json:"sourceHash,omitempty"`
+	From       *common.Address `json:"from,omitempty"`
+	Mint       *hexutil.Big    `json:"mint,omitempty"`
+
 	// Access list transaction fields:
 	ChainID    *hexutil.Big `json:"chainId,omitempty"`
 	AccessList *AccessList  `json:"accessList,omitempty"`
@@ -92,6 +97,24 @@ func (tx DynamicFeeTransaction) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&enc)
 }
 
+func (tx DepositTx) MarshalJSON() ([]byte, error) {
+	var enc txJSON
+
+	enc.Hash = tx.Hash()
+	enc.Type = hexutil.Uint64(tx.Type())
+	enc.Gas = (*hexutil.Uint64)(&tx.Gas)
+	enc.Value = (*hexutil.Big)(tx.Value.ToBig())
+	enc.Data = (*hexutil.Bytes)(&tx.Data)
+	enc.To = tx.To
+	enc.SourceHash = &tx.SourceHash
+	enc.From = &tx.From
+	if tx.Mint != nil {
+		enc.Mint = (*hexutil.Big)(tx.Mint.ToBig())
+	}
+	// other fields will show up as null.
+	return json.Marshal(&enc)
+}
+
 func UnmarshalTransactionFromJSON(input []byte) (Transaction, error) {
 	var p fastjson.Parser
 	v, err := p.ParseBytes(input)
@@ -121,6 +144,12 @@ func UnmarshalTransactionFromJSON(input []byte) (Transaction, error) {
 		return tx, nil
 	case DynamicFeeTxType:
 		tx := &DynamicFeeTransaction{}
+		if err = tx.UnmarshalJSON(input); err != nil {
+			return nil, err
+		}
+		return tx, nil
+	case DepositTxType:
+		tx := &DepositTx{}
 		if err = tx.UnmarshalJSON(input); err != nil {
 			return nil, err
 		}
@@ -354,5 +383,47 @@ func (tx *DynamicFeeTransaction) UnmarshalJSON(input []byte) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func (tx *DepositTx) UnmarshalJSON(input []byte) error {
+	var dec txJSON
+	if err := json.Unmarshal(input, &dec); err != nil {
+		return err
+	}
+	if dec.AccessList != nil || dec.V != nil || dec.R != nil || dec.S != nil || dec.FeeCap != nil ||
+		dec.Tip != nil || dec.GasPrice != nil || (dec.Nonce != nil && *dec.Nonce != 0) {
+		return errors.New("unexpected field(s) in deposit transaction")
+	}
+
+	if dec.To != nil {
+		tx.To = dec.To
+	}
+	tx.Gas = uint64(*dec.Gas)
+	if dec.Value == nil {
+		return errors.New("missing required field 'value' in transaction")
+	}
+	var overflow bool
+	tx.Value, overflow = uint256.FromBig(dec.Value.ToInt())
+	if overflow {
+		return errors.New("'value' in transaction does not fit in 256 bits")
+	}
+	// mint may be omitted or nil if there is nothing to mint.
+	tx.Mint, overflow = uint256.FromBig(dec.Mint.ToInt())
+	if overflow {
+		return errors.New("'mint' in transaction does not fit in 256 bits")
+	}
+	if dec.Data == nil {
+		return errors.New("missing required field 'input' in transaction")
+	}
+	tx.Data = *dec.Data
+	if dec.From == nil {
+		return errors.New("missing required field 'from' in transaction")
+	}
+	tx.From = *dec.From
+	if dec.SourceHash == nil {
+		return errors.New("missing required field 'sourceHash' in transaction")
+	}
+	tx.SourceHash = *dec.SourceHash
 	return nil
 }

@@ -103,10 +103,7 @@ func (tx DepositTx) MarshalJSON() ([]byte, error) {
 	enc.Hash = tx.Hash()
 	enc.Type = hexutil.Uint64(tx.Type())
 	enc.ChainID = (*hexutil.Big)(tx.ChainID.ToBig())
-	enc.AccessList = &tx.AccessList
 	enc.Nonce = (*hexutil.Uint64)(&tx.Nonce)
-	enc.FeeCap = (*hexutil.Big)(tx.FeeCap.ToBig())
-	enc.Tip = (*hexutil.Big)(tx.Tip.ToBig())
 	enc.Gas = (*hexutil.Uint64)(&tx.Gas)
 	enc.Value = (*hexutil.Big)(tx.Value.ToBig())
 	enc.Data = (*hexutil.Bytes)(&tx.Data)

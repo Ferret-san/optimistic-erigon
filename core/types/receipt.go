@@ -246,7 +246,7 @@ func (r *Receipt) DecodeRLP(s *rlp.Stream) error {
 		}
 		r.Type = b[0]
 		switch r.Type {
-		case AccessListTxType, DynamicFeeTxType:
+		case AccessListTxType, DynamicFeeTxType, DepositTxType:
 			if err := r.decodePayload(s); err != nil {
 				return err
 			}

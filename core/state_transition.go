@@ -86,6 +86,7 @@ type Message interface {
 
 	// Mint is nil if there is no minting
 	Mint() *uint256.Int
+
 	Nonce() uint64
 	CheckNonce() bool
 	Data() []byte

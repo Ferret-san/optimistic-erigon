@@ -192,7 +192,7 @@ func (sg Signer) SenderWithContext(context *secp256k1.Context, tx Transaction) (
 	// recoverPlain below will subract 27 from V
 	switch t := tx.(type) {
 	case *DepositTx:
-		return tx.(*DepositTx).From, nil
+		return t.From, nil
 	case *LegacyTx:
 		if !t.Protected() {
 			if !sg.unprotected {
@@ -295,6 +295,8 @@ func (sg Signer) SignatureValues(tx Transaction, sig []byte) (R, S, V *uint256.I
 			return nil, nil, nil, ErrInvalidChainId
 		}
 		R, S, V = decodeSignature(sig)
+	case *DepositTx:
+		// this is a noop for deposit transactions
 	default:
 		return nil, nil, nil, ErrTxTypeNotSupported
 	}

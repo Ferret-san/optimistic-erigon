@@ -99,18 +99,19 @@ func (tx DynamicFeeTransaction) MarshalJSON() ([]byte, error) {
 
 func (tx DepositTx) MarshalJSON() ([]byte, error) {
 	var enc txJSON
+	var nonce hexutil.Uint64 = hexutil.Uint64(tx.GetNonce())
 
 	enc.Hash = tx.Hash()
 	enc.Type = hexutil.Uint64(tx.Type())
-	enc.ChainID = (*hexutil.Big)(tx.ChainID.ToBig())
-	enc.Nonce = (*hexutil.Uint64)(&tx.Nonce)
+	enc.ChainID = (*hexutil.Big)(common.Big0)
+	enc.Nonce = (*hexutil.Uint64)(&nonce)
 	enc.Gas = (*hexutil.Uint64)(&tx.Gas)
 	enc.Value = (*hexutil.Big)(tx.Value.ToBig())
 	enc.Data = (*hexutil.Bytes)(&tx.Data)
 	enc.To = tx.To
-	enc.V = (*hexutil.Big)(tx.V.ToBig())
-	enc.R = (*hexutil.Big)(tx.R.ToBig())
-	enc.S = (*hexutil.Big)(tx.S.ToBig())
+	enc.V = (*hexutil.Big)(common.Big0)
+	enc.R = (*hexutil.Big)(common.Big0)
+	enc.S = (*hexutil.Big)(common.Big0)
 	// DepositTx fields
 	enc.SourceHash = &tx.SourceHash
 	enc.From = &tx.From

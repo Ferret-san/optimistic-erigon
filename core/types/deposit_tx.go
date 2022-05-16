@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"sync/atomic"
+	"time"
 
 	"github.com/ledgerwatch/erigon/rlp"
 
@@ -29,22 +31,34 @@ import (
 )
 
 type DepositTx struct {
-	CommonTx
+	time time.Time // Time first seen locally (spam avoidance)
+	// caches
+	hash atomic.Value //nolint:structcheck
+	size atomic.Value //nolint:structcheck
 	// SourceHash uniquely identifies the source of the deposit
 	SourceHash common.Hash
 	// From is exposed through the types.Signer, not through TxData
 	From common.Address
+	// nil means contract creation
+	To *common.Address `rlp:"nil"`
 	// Mint is minted on L2, locked on L1, nil if no minting.
 	Mint *uint256.Int
+	// Value is transferred from L2 balance, executed after Mint (if any)
+	Value *uint256.Int
+	// gas limit
+	Gas  uint64
+	Data []byte
+}
+
+var _ Transaction = (*DepositTx)(nil)
+
+func (tx DepositTx) GetChainID() *uint256.Int {
+	panic("deposits are not signed and do not have a chain-ID")
 }
 
 // DepositsNonce identifies a deposit, since go-ethereum abstracts all transaction types to a core.Message.
 // Deposits do not set a nonce, deposits are included by the system and cannot be repeated or included elsewhere.
 const DepositsNonce uint64 = 0xffff_ffff_ffff_fffd
-
-func (tx DepositTx) GetChainID() *uint256.Int {
-	return uint256.NewInt(0)
-}
 
 func (tx DepositTx) GetNonce() uint64 {
 	return DepositsNonce
@@ -66,16 +80,16 @@ func (tx DepositTx) GetData() []byte {
 	return tx.Data
 }
 
-func (tx DepositTx) GetSourceHash() common.Hash {
-	return tx.SourceHash
+func (tx DepositTx) GetSender() (common.Address, bool) {
+	return tx.From, false
 }
 
-func (tx DepositTx) GetMint() *uint256.Int {
-	return tx.Mint
+func (tx DepositTx) SetSender(addr common.Address) {
+	tx.From = addr
 }
 
 func (tx DepositTx) RawSignatureValues() (*uint256.Int, *uint256.Int, *uint256.Int) {
-	return uint256.NewInt(0), uint256.NewInt(0), uint256.NewInt(0)
+	panic("deposit tx does not have a signature")
 }
 
 func (tx DepositTx) SigningHash(chainID *big.Int) common.Hash {
@@ -194,6 +208,10 @@ func (tx *DepositTx) WithSignature(signer Signer, sig []byte) (Transaction, erro
 	return tx.copy(), nil
 }
 
+func (tx DepositTx) Time() time.Time {
+	return tx.time
+}
+
 func (tx DepositTx) Type() byte { return DepositTxType }
 
 func (tx *DepositTx) Hash() common.Hash {
@@ -213,7 +231,7 @@ func (tx *DepositTx) Hash() common.Hash {
 	return hash
 }
 
-// Should Deposit Transactions be replayed protected?
+// not sure ab this one lol
 func (tx DepositTx) Protected() bool {
 	return true
 }
@@ -222,11 +240,16 @@ func (tx DepositTx) IsContractDeploy() bool {
 	return false
 }
 
+func (tx DepositTx) IsStarkNet() bool {
+	return false
+}
+
 // All zero in the prototype
 func (tx DepositTx) GetPrice() *uint256.Int  { return uint256.NewInt(0) }
 func (tx DepositTx) GetTip() *uint256.Int    { return uint256.NewInt(0) }
 func (tx DepositTx) GetFeeCap() *uint256.Int { return uint256.NewInt(0) }
 
+// Is this needed at all?
 func (tx DepositTx) GetEffectiveGasTip(baseFee *uint256.Int) *uint256.Int {
 	if baseFee == nil {
 		return tx.GetTip()
@@ -254,41 +277,32 @@ func (tx DepositTx) GetAccessList() AccessList {
 }
 
 // NewDepositTransaction creates a deposit transaction
-// NOTE: this might not be needed
 func NewDepositTransaction(to common.Address, mint *uint256.Int, amount *uint256.Int, gasLimit uint64, gasPrice *uint256.Int, data []byte) *DepositTx {
 	return &DepositTx{
-		CommonTx: CommonTx{
-			// nil means contract creation
-			To: &to,
-			// Value is transferred from L2 balance, executed after Mint (if any)
-			Value: amount,
-			// gas limit
-			Gas:  gasLimit,
-			Data: data,
-		},
+		// NOTE: Does the SourceHash get added some time after this function is called?
+		// NOTE: from comes from TransactionMisc.from which is of type atomic.Value
+		// nil means contract creation
+		To: &to,
 		// Mint is minted on L2, locked on L1, nil if no minting.
 		Mint: mint,
+		// Value is transferred from L2 balance, executed after Mint (if any)
+		Value: amount,
+		// gas limit
+		Gas:  gasLimit,
+		Data: data,
 	}
 }
 
 // copy creates a deep copy of the transaction data and initializes all fields.
 func (tx DepositTx) copy() *DepositTx {
 	cpy := &DepositTx{
-		CommonTx: CommonTx{
-			TransactionMisc: TransactionMisc{
-				time: tx.time,
-			},
-			Nonce: DepositsNonce,
-
-			To:   tx.To,
-			Data: common.CopyBytes(tx.Data),
-			Gas:  tx.Gas,
-			// These are initialized below.
-			Value: new(uint256.Int),
-		},
-		From:       tx.From,
 		SourceHash: tx.SourceHash,
+		From:       tx.From,
+		To:         tx.To,
 		Mint:       nil,
+		Value:      new(uint256.Int),
+		Gas:        tx.Gas,
+		Data:       common.CopyBytes(tx.Data),
 	}
 	if tx.Mint != nil {
 		cpy.Mint = new(uint256.Int).Set(tx.Mint)
@@ -300,11 +314,10 @@ func (tx DepositTx) copy() *DepositTx {
 }
 
 // AsMessage returns the transaction as a core.Message.
-func (tx DepositTx) AsMessage(s Signer, baseFee *big.Int) (Message, error) {
+func (tx DepositTx) AsMessage(s Signer, _ *big.Int) (Message, error) {
 	msg := Message{
-		nonce:    tx.Nonce,
-		gasLimit: tx.Gas,
-		// No gas cost yet in prototype
+		nonce:      DepositsNonce,
+		gasLimit:   tx.Gas,
 		gasPrice:   *uint256.NewInt(0),
 		tip:        *uint256.NewInt(0),
 		feeCap:     *uint256.NewInt(0),
@@ -317,9 +330,7 @@ func (tx DepositTx) AsMessage(s Signer, baseFee *big.Int) (Message, error) {
 		mint:       tx.Mint,
 	}
 
-	var err error
-	msg.from, err = tx.Sender(s)
-	return msg, err
+	return msg, nil
 }
 
 func (tx *DepositTx) Sender(signer Signer) (common.Address, error) {

@@ -329,7 +329,7 @@ func newRPCTransaction(tx types.Transaction, blockHash common.Hash, blockNumber 
 			result.GasPrice = nil
 		}
 	case *types.DepositTx:
-		chainId = t.ChainID.ToBig()
+		chainId = common.Big0
 		result.ChainID = (*hexutil.Big)(chainId)
 		result.Mint = (*hexutil.Big)(t.Mint.ToBig())
 		srcHash := t.SourceHash
